@@ -33,7 +33,7 @@ func (h *ExecutorHandler) Message(msg *message.Message) error {
 			message.WithContents(message.Contents{
 				Status: message.Success,
 				Error:  nil,
-				Data: message.ExperimentStartContentData{
+				Data: &message.ExperimentStartContentData{
 					ExperimentID: experimentId,
 				},
 			}),
@@ -60,7 +60,7 @@ func (h *ExecutorHandler) Message(msg *message.Message) error {
 			message.WithContents(message.Contents{
 				Status: message.Success,
 				Error:  nil,
-				Data: message.ExperimentStopContentData{
+				Data: &message.ExperimentStopContentData{
 					ExperimentID: experimentStopRequestData.ExperimentID,
 					Progress:     "success",
 				},

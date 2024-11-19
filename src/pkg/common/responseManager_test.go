@@ -47,8 +47,11 @@ func TestSend_Success(t *testing.T) {
 	manager.Add(id, ch)
 
 	// Prepare a test message to send
-	msg := &message.Message{ID: id}
-
+	msg := &message.Message{
+		ResponseID: id,
+		Type:       message.ExperimentStart,
+		Source:     "test",
+	}
 	// Send the message
 	err := manager.Send(msg)
 
@@ -70,10 +73,10 @@ func TestSend_NoChannel(t *testing.T) {
 	// Prepare a test message with an ID that doesn't have a channel
 	id := uuid.New()
 	msg := message.New(
+		message.WithResponseID(id),
 		message.WithType(message.ExperimentStart),
 		message.WithSource("test"),
 	)
-	msg.ID = id
 
 	// Try sending the message (channel does not exist)
 	err := manager.Send(msg)
@@ -110,10 +113,10 @@ func TestAdd_Concurrency(t *testing.T) {
 
 			// After adding, send a message
 			msg := message.New(
+				message.WithResponseID(id),
 				message.WithType(message.ExperimentStart),
 				message.WithSource("test"),
 			)
-			msg.ID = id
 			err := manager.Send(msg)
 
 			// Assert no error occurred

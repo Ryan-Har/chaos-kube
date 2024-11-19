@@ -80,17 +80,17 @@ func (c *Contents) Validate() error {
 	}
 
 	switch data := c.Data.(type) {
-	case ExperimentStartContentData:
+	case *ExperimentStartContentData:
 		dataType = "ExperimentStartContentData"
 		if data.ExperimentID == uuid.Nil {
 			failReasons = append(failReasons, "Experiment Id is nil")
 		}
-	case ExperimentStopContentData:
+	case *ExperimentStopContentData:
 		dataType = "ExperimentStopContentData"
 		if data.ExperimentID == uuid.Nil {
 			failReasons = append(failReasons, "Experiment Id is nil")
 		}
-	case ExperimentStopRequestContentData:
+	case *ExperimentStopRequestContentData:
 		dataType = "ExperimentStopRequestContentData"
 		if data.ExperimentID == uuid.Nil {
 			failReasons = append(failReasons, "Experiment Id is nil")
