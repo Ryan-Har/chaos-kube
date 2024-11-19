@@ -18,7 +18,7 @@ func main() {
 
 	responseManager := common.NewResponseManager()
 	redisClient := common.NewRedisClient(cfg.RedisConfig)
-	hndlr := handler.NewChaosHandler(redisClient, responseManager)
+	hndlr := handler.NewChaosHandler(redisClient, responseManager, cfg.RedisStreams.ConsumerGroup)
 	controller := services.NewControllerService(cfg, hndlr)
 	controller.Start()
 }

@@ -1,14 +1,11 @@
 package message_test
 
 import (
-	"encoding/json"
 	"errors"
 	"testing"
 	"time"
 
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
-	"github.com/go-redis/redis/v8"
-	"github.com/go-redis/redismock/v8"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
@@ -129,6 +126,36 @@ func TestMessageValidate(t *testing.T) {
 			)),
 			expectErr: errors.New("source is required"),
 		},
+		{
+			name: "Valid Message with Contents",
+			msg: setID(validID, message.New(
+				message.WithType(message.JobStart),
+				message.WithTimestamp(validTime),
+				message.WithSource("test-source"),
+				message.WithContents(message.Contents{Status: message.Success}),
+			)),
+			expectErr: nil,
+		},
+		{
+			name: "Invalid Message with Invalid Contents",
+			msg: setID(validID, message.New(
+				message.WithType(message.JobStart),
+				message.WithTimestamp(validTime),
+				message.WithSource("test-source"),
+				message.WithContents(message.Contents{Status: message.Status(999)}), // Invalid status
+			)),
+			expectErr: errors.New("contents validation failed: invalid status in contents"),
+		},
+		{
+			name: "Valid Message with nil Contents",
+			msg: setID(validID, message.New(
+				message.WithType(message.JobStart),
+				message.WithTimestamp(validTime),
+				message.WithSource("test-source"),
+				message.WithContents(message.Contents{Status: message.Success, Data: nil}), // nil Data is valid
+			)),
+			expectErr: nil,
+		},
 	}
 
 	for _, tt := range tests {
@@ -141,35 +168,4 @@ func TestMessageValidate(t *testing.T) {
 			}
 		})
 	}
-}
-
-// TestSendToRedis verifies that a message can be sent to Redis as expected.
-func TestSendToRedis(t *testing.T) {
-	rdb, mock := redismock.NewClientMock()
-
-	// Create a valid message to send
-	msg := message.New(
-		message.WithType(message.JobStart),
-		message.WithTimestamp(time.Now()),
-		message.WithSource("test-source"),
-	)
-
-	// Marshal the message to JSON to set up the expected arguments
-	jsonMsg, err := json.Marshal(msg)
-	assert.NoError(t, err, "Expected no error when marshalling message")
-
-	// Set up the expectation for XAdd with the stream name and values map
-	mock.ExpectXAdd(&redis.XAddArgs{
-		Stream: "test-stream",
-		Values: map[string]interface{}{
-			"data": jsonMsg,
-		},
-	}).SetVal("message-id")
-
-	// Attempt to send the message to Redis
-	err = msg.SendToRedis(rdb, "test-stream")
-	assert.NoError(t, err, "Expected no error when sending valid message")
-
-	// Ensure all expectations are met
-	assert.NoError(t, mock.ExpectationsWereMet(), "Expectations should be met")
 }

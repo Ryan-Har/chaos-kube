@@ -1,21 +1,22 @@
 package services
 
 import (
-	"github.com/Ryan-Har/chaos-kube/pkg/common"
+	"github.com/Ryan-Har/chaos-kube/chaos-executor/handler"
 	"github.com/Ryan-Har/chaos-kube/pkg/config"
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
 	"github.com/go-redis/redis/v8"
+	"log/slog"
 )
 
 type ExecutorService struct {
-	cfg         *config.Config
-	redisClient common.RedisClient
+	cfg     *config.Config
+	Handler *handler.ExecutorHandler
 }
 
-func NewExecutorService(cfg *config.Config, redisClient common.RedisClient) *ExecutorService {
+func NewExecutorService(cfg *config.Config, handler *handler.ExecutorHandler) *ExecutorService {
 	return &ExecutorService{
-		cfg:         cfg,
-		redisClient: redisClient,
+		cfg,
+		handler,
 	}
 }
 
@@ -26,7 +27,7 @@ func (s *ExecutorService) Start() {
 
 func (s *ExecutorService) readStreams() {
 	for _, stream := range s.cfg.RedisStreams.ConsumerStreams {
-		s.redisClient.CreateConsumerGroup(stream, s.cfg.RedisStreams.ConsumerGroup)
+		s.Handler.Redis.CreateConsumerGroup(stream, s.cfg.RedisStreams.ConsumerGroup)
 
 		go func() {
 			rExArgs := &redis.XReadGroupArgs{
@@ -38,7 +39,7 @@ func (s *ExecutorService) readStreams() {
 			}
 
 			receive := make(chan message.Message)
-			go s.redisClient.ReadStreamToChan(rExArgs, receive)
+			go s.Handler.Redis.ReadStreamToChan(rExArgs, &receive)
 			for msg := range receive {
 				go s.ProcessMessage(&msg)
 			}
@@ -47,5 +48,12 @@ func (s *ExecutorService) readStreams() {
 }
 
 func (s *ExecutorService) ProcessMessage(msg *message.Message) {
-
+	if msg.Source == s.Handler.Source {
+		return
+	}
+	err := s.Handler.Message(msg)
+	if err != nil {
+		slog.Error(err.Error())
+		return
+	}
 }

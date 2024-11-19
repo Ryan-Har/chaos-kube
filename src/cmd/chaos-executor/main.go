@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/Ryan-Har/chaos-kube/chaos-executor/handler"
 	"github.com/Ryan-Har/chaos-kube/chaos-executor/services"
 	"github.com/Ryan-Har/chaos-kube/pkg/common"
 	"github.com/Ryan-Har/chaos-kube/pkg/config"
@@ -16,6 +17,7 @@ func main() {
 	}
 
 	redisClient := common.NewRedisClient(cfg.RedisConfig)
-	executor := services.NewExecutorService(cfg, redisClient)
+	hndlr := handler.NewExecutorHandler(redisClient, cfg.RedisStreams.ConsumerGroup)
+	executor := services.NewExecutorService(cfg, hndlr)
 	executor.Start()
 }

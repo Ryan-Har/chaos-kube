@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"github.com/Ryan-Har/chaos-kube/pkg/streams"
 	"log/slog"
 	"os"
 	"strconv"
@@ -10,7 +11,7 @@ import (
 
 type Config struct {
 	RedisConfig  RedisConfig
-	RedisStreams RedisStreams
+	RedisStreams ReadRedisStreams
 	Hostname     string
 }
 
@@ -20,7 +21,7 @@ type RedisConfig struct {
 	DB       int
 }
 
-type RedisStreams struct {
+type ReadRedisStreams struct {
 	ConsumerGroup   string
 	ConsumerStreams []string
 }
@@ -104,14 +105,18 @@ func loadRedisConfig() (RedisConfig, error) {
 	return rc, err
 }
 
-func loadRedisStreams(serviceName string) (RedisStreams, error) {
-	var rs RedisStreams
+func loadRedisStreams(serviceName string) (ReadRedisStreams, error) {
+	var rs ReadRedisStreams
 	rs.ConsumerGroup = serviceName
 	switch serviceName {
 	case "controller":
-		rs.ConsumerStreams = []string{"job-control", "experiment-control", "config-control"}
+		rs.ConsumerStreams = []string{
+			streams.JobControl.String(),
+			streams.ExperimentControl.String(),
+			streams.ConfigControl.String()}
 	case "executor":
-		rs.ConsumerStreams = []string{"experiment-control"}
+		rs.ConsumerStreams = []string{
+			streams.ExperimentControl.String()}
 	default:
 		return rs, fmt.Errorf("unable to determine redis streams for %s", serviceName)
 	}

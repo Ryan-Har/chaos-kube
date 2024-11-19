@@ -1,10 +1,9 @@
 package message
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
-	"github.com/go-redis/redis/v8"
+	"fmt"
 	"github.com/google/uuid"
 	"time"
 )
@@ -54,6 +53,24 @@ func (m MessageType) String() string {
 		return "Unknown"
 	}
 	return msgTypes[m]
+}
+
+// Define a custom error type for when a message cannot be processed
+type MessageNotProcessedError struct {
+	ID     uuid.UUID
+	Type   MessageType
+	Reason string
+}
+
+// Implement the Error() method for MessageNotProcessedError
+func (e *MessageNotProcessedError) Error() string {
+	return fmt.Sprintf("unable to process message with ID %v and type %v. Reason: %s", e.ID, e.Type, e.Reason)
+}
+
+// Implement the Is method for MessageNotProcessedError
+func (e *MessageNotProcessedError) Is(err error) bool {
+	var target *MessageNotProcessedError
+	return errors.As(err, &target)
 }
 
 // Functional option type that modifies a Message.
@@ -119,6 +136,8 @@ func New(opts ...MessageOption) *Message {
 	return m
 }
 
+// method to validate message is ok to send
+// TODO: Add vailidation for contents based on Type, certain types cannot have nil contents
 func (m *Message) Validate() error {
 	if m.ID == uuid.Nil {
 		return errors.New("ID is required")
@@ -132,24 +151,61 @@ func (m *Message) Validate() error {
 	if m.Source == "" {
 		return errors.New("source is required")
 	}
+	// Validate the Contents field, if it exists
+	if err := m.Contents.Validate(); err != nil {
+		return fmt.Errorf("contents validation failed: %w", err)
+	}
 	return nil
 }
 
-// Sends the message to a specific stream using the redis client
-func (m *Message) SendToRedis(rdb *redis.Client, stream string) error {
-	if err := m.Validate(); err != nil {
+// Custom UnmarshalJSON for Message to handle the dynamic unmarshalling of Contents.Data based on Type
+func (m *Message) UnmarshalJSON(data []byte) error {
+	// First, unmarshal the message without the Data field
+	type Alias Message
+	aux := &struct {
+		*Alias
+		Contents *struct { // Use pointer to allow nil contents
+			Status Status          `json:"status"`
+			Error  error           `json:"error,omitempty"`
+			Data   json.RawMessage `json:"data,omitempty"` // Use RawMessage for deferred unmarshalling
+		} `json:"contents,omitempty"` // Handle missing contents gracefully
+	}{
+		Alias: (*Alias)(m),
+	}
+
+	// Unmarshal the JSON into the auxiliary struct
+	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
 	}
-	jsonMsg, err := json.Marshal(m)
-	if err != nil {
-		return err
+
+	if aux.Contents != nil {
+		m.Contents.Status = aux.Contents.Status
+		m.Contents.Error = aux.Contents.Error
 	}
-	ctx := context.Background()
-	_, err = rdb.XAdd(ctx, &redis.XAddArgs{
-		Stream: stream,
-		Values: map[string]interface{}{
-			"data": jsonMsg,
-		},
-	}).Result()
-	return err
+
+	switch m.Type {
+	// In these cases we expect no content
+	case ExperimentStartRequest:
+		m.Contents = Contents{}
+		return nil
+	case ExperimentStart:
+		if aux.Contents != nil {
+			var data ExperimentStartContentData
+			if err := json.Unmarshal(aux.Contents.Data, &data); err != nil {
+				return fmt.Errorf("failed to unmarshal ExperimentStartContentData: %w", err)
+			}
+			m.Contents.Data = data
+		}
+	case ExperimentStopRequest:
+		if aux.Contents != nil {
+			var data ExperimentStopRequestContentData
+			if err := json.Unmarshal(aux.Contents.Data, &data); err != nil {
+				return fmt.Errorf("failed to unmarshal ExperimentStopRequestContentData: %w", err)
+			}
+			m.Contents.Data = data
+		}
+	default:
+		return fmt.Errorf("unknown message type: %v", m.Type)
+	}
+	return nil
 }

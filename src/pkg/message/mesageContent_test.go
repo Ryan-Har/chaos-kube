@@ -4,96 +4,127 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 )
 
-// Mock implementation of MessageContentData to test IsValidMessageDataContent method.
-type MockContentData struct {
-	Valid bool
+func TestValidate_ValidContents(t *testing.T) {
+	// Create valid ExperimentStartContentData with a valid UUID
+	validExperimentID := uuid.New()
+	contents := &Contents{
+		Status: Success,
+		Data:   &ExperimentStartContentData{ExperimentID: validExperimentID},
+	}
+
+	err := contents.Validate()
+
+	// Assert that no error is returned for valid contents
+	assert.NoError(t, err)
 }
 
-func (m MockContentData) IsValidMessageDataContent() bool {
-	return m.Valid
+func TestValidate_InvalidStatus(t *testing.T) {
+	// Create a contents object with an invalid status (not defined in the enum)
+	contents := &Contents{
+		Status: Status(100), // Invalid status
+	}
+
+	err := contents.Validate()
+
+	// Assert that the error is returned for invalid status
+	assert.Error(t, err)
+	assert.Equal(t, err.Error(), "invalid status in contents")
+}
+
+func TestValidate_InvalidExperimentID(t *testing.T) {
+	// Create ExperimentStartContentData with nil UUID (invalid ID)
+	contents := &Contents{
+		Status: Success,
+		Data:   &ExperimentStartContentData{ExperimentID: uuid.Nil},
+	}
+
+	err := contents.Validate()
+
+	// Assert that the error is returned due to nil UUID
+	assert.Error(t, err)
+
+	var contentErr *ContentNotValidError
+	assert.True(t, errors.As(err, &contentErr))
+	assert.Equal(t, contentErr.ContentType, "ExperimentStartContentData")
+	assert.Contains(t, contentErr.Reasons, "Experiment Id is nil")
+}
+
+func TestValidate_ExperimentStopContentData_InvalidID(t *testing.T) {
+	// Create ExperimentStopContentData with nil UUID
+	contents := &Contents{
+		Status: Success,
+		Data:   &ExperimentStopContentData{ExperimentID: uuid.Nil},
+	}
+
+	err := contents.Validate()
+
+	// Assert error is returned due to nil UUID
+	assert.Error(t, err)
+
+	var contentErr *ContentNotValidError
+	assert.True(t, errors.As(err, &contentErr))
+	assert.Equal(t, contentErr.ContentType, "ExperimentStopContentData")
+	assert.Contains(t, contentErr.Reasons, "Experiment Id is nil")
+}
+
+func TestValidate_UnknownContentType(t *testing.T) {
+	// Create contents with a data type that doesn't match any known types
+	contents := &Contents{
+		Status: Success,
+		Data:   "string", // Invalid data type
+	}
+
+	err := contents.Validate()
+
+	// Assert error is returned with Unknown content type
+	assert.Error(t, err)
+
+	var contentErr *ContentNotValidError
+	assert.True(t, errors.As(err, &contentErr))
+	assert.Equal(t, contentErr.ContentType, "Unknown")
+	assert.Contains(t, contentErr.Reasons, "Unknown Contents Data Type")
+}
+
+func TestValidate_NilData(t *testing.T) {
+	// Create contents with nil data and a valid status
+	contents := &Contents{
+		Status: Success,
+		Data:   nil, // Nil data
+	}
+
+	err := contents.Validate()
+
+	// Assert that no error is returned when data is nil
+	assert.NoError(t, err)
+}
+
+func TestValidate_InvalidExperimentStopRequestContentData_ID(t *testing.T) {
+	// Create ExperimentStopRequestContentData with nil UUID
+	contents := &Contents{
+		Status: Success,
+		Data:   &ExperimentStopRequestContentData{ExperimentID: uuid.Nil},
+	}
+
+	err := contents.Validate()
+
+	// Assert error is returned due to nil UUID
+	assert.Error(t, err)
+
+	var contentErr *ContentNotValidError
+	assert.True(t, errors.As(err, &contentErr))
+	assert.Equal(t, contentErr.ContentType, "ExperimentStopRequestContentData")
+	assert.Contains(t, contentErr.Reasons, "Experiment Id is nil")
 }
 
 func TestStatusString(t *testing.T) {
-	tests := []struct {
-		status   Status
-		expected string
-	}{
-		{Success, "Success"},
-		{Warn, "Warning"},
-		{Fail, "Fail"},
-		{Cancel, "Cancel"},
-		// Test for a case outside of defined constants (to verify array bounds)
-		{Status(999), "Unknown"},
-	}
-
-	for _, tt := range tests {
-		assert.Equal(t, tt.expected, tt.status.String(), "Expected status string representation to match")
-	}
-}
-
-func TestContentsStatus(t *testing.T) {
-	// Test contents with different statuses
-	tests := []struct {
-		contents Contents
-		expected Status
-	}{
-		{Contents{Status: Success}, Success},
-		{Contents{Status: Warn}, Warn},
-		{Contents{Status: Fail}, Fail},
-		{Contents{Status: Cancel}, Cancel},
-	}
-
-	for _, tt := range tests {
-		assert.Equal(t, tt.expected, tt.contents.Status, "Expected contents status to match")
-	}
-}
-
-func TestContentsError(t *testing.T) {
-	errMsg := errors.New("sample error")
-	contents := Contents{
-		Error: errMsg,
-	}
-
-	assert.Equal(t, errMsg, contents.Error, "Expected contents error to match the set error")
-}
-
-func TestContentsData(t *testing.T) {
-	// Test Contents with different data types
-	mockData := MockContentData{Valid: true}
-	contents := Contents{
-		Data: mockData,
-	}
-
-	assert.Equal(t, mockData, contents.Data, "Expected contents data to match the set data")
-}
-
-func TestMockContentDataIsValid(t *testing.T) {
-	validContent := MockContentData{Valid: true}
-	invalidContent := MockContentData{Valid: false}
-
-	assert.True(t, validContent.IsValidMessageDataContent(), "Expected validContent to be valid")
-	assert.False(t, invalidContent.IsValidMessageDataContent(), "Expected invalidContent to be invalid")
-}
-
-func TestContentsWithMockData(t *testing.T) {
-	// Test valid mock data
-	validData := MockContentData{Valid: true}
-	contentsWithValidData := Contents{
-		Data: validData,
-	}
-
-	assert.IsType(t, MockContentData{}, contentsWithValidData.Data, "Expected contents data type to be MockContentData")
-	assert.True(t, contentsWithValidData.Data.(MockContentData).IsValidMessageDataContent(), "Expected mock data to be valid")
-
-	// Test invalid mock data
-	invalidData := MockContentData{Valid: false}
-	contentsWithInvalidData := Contents{
-		Data: invalidData,
-	}
-
-	assert.IsType(t, MockContentData{}, contentsWithInvalidData.Data, "Expected contents data type to be MockContentData")
-	assert.False(t, contentsWithInvalidData.Data.(MockContentData).IsValidMessageDataContent(), "Expected mock data to be invalid")
+	// Test that the Status enum correctly converts to a string
+	assert.Equal(t, Success.String(), "Success")
+	assert.Equal(t, Warn.String(), "Warning")
+	assert.Equal(t, Fail.String(), "Fail")
+	assert.Equal(t, Cancel.String(), "Cancel")
+	assert.Equal(t, Status(100).String(), "Unknown")
 }

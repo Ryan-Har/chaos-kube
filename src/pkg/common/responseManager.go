@@ -23,10 +23,12 @@ func NewResponseManager() *RedisResponseManager {
 }
 
 // Method adds an entry to the manager
+// THIS WILL NOT WORK IF RESPONSEMANAGER IS DISTRIBUTED, FIND ANOTHER WAY
 func (r *RedisResponseManager) Add(id uuid.UUID, c chan<- message.Message) {
 	r.waitingResponsesMux.Lock()
 	defer r.waitingResponsesMux.Unlock()
 	r.WaitingResponses[id] = c
+	slog.Info("Item added to response manager", "ID", id)
 }
 
 // Define a custom error type for when a channel doesn't exist for a message ID
@@ -47,16 +49,20 @@ func (e *ChannelNotFoundError) Is(err error) bool {
 
 // Method sends message to the waiting channel, if it exists
 func (r *RedisResponseManager) Send(m *message.Message) error {
-	slog.Info("response manager handling message", "msg id", m.ID)
+	if m.ResponseID == uuid.Nil {
+		return &ChannelNotFoundError{ID: uuid.Nil}
+	}
 	r.waitingResponsesMux.RLock()
-	channel, ok := r.WaitingResponses[m.ID]
+	channel, ok := r.WaitingResponses[m.ResponseID]
 	r.waitingResponsesMux.RUnlock()
 	if !ok {
-		return &ChannelNotFoundError{ID: m.ID}
+		return &ChannelNotFoundError{ID: m.ResponseID}
 	}
 	channel <- *m
+	close(channel)
 	r.waitingResponsesMux.Lock()
-	delete(r.WaitingResponses, m.ID)
+	delete(r.WaitingResponses, m.ResponseID)
 	r.waitingResponsesMux.Unlock()
+	slog.Debug("Item removed from response manager", "ID", m.ResponseID)
 	return nil
 }

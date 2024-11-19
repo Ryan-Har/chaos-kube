@@ -3,6 +3,7 @@ package services
 import (
 	"errors"
 	"log/slog"
+	"time"
 
 	"github.com/Ryan-Har/chaos-kube/chaos-controller/handler"
 	"github.com/Ryan-Har/chaos-kube/pkg/common"
@@ -25,9 +26,12 @@ func NewControllerService(cfg *config.Config, handler *handler.ChaosHandler) *Co
 
 func (s *ControllerService) Start() {
 	// Begin background JobHandler
-	go s.Handler.JobHandler.Begin(s.Handler.Redis)
-
-	//go s.readStreams()
+	//go s.Handler.JobHandler.Begin(s.Handler.Redis)
+	go s.readStreams()
+	for i := 1; i <= 10; i++ {
+		go s.Handler.SendNewExperimentStartRequest()
+		time.Sleep(3 * time.Second)
+	}
 
 	select {}
 }
@@ -46,7 +50,7 @@ func (s *ControllerService) readStreams() {
 			}
 
 			receive := make(chan message.Message)
-			go s.Handler.Redis.ReadStreamToChan(rExArgs, receive)
+			go s.Handler.Redis.ReadStreamToChan(rExArgs, &receive)
 			for msg := range receive {
 				go s.ProcessMessage(&msg)
 			}
@@ -57,6 +61,9 @@ func (s *ControllerService) readStreams() {
 // Processes the message by sending it to the response manager. If nothing is waiting for this response
 // then the handler takes it
 func (s *ControllerService) ProcessMessage(msg *message.Message) {
+	if msg.Source == s.Handler.Source {
+		return
+	}
 	err := s.Handler.ResponseManager.Send(msg)
 	if err == nil {
 		return
@@ -66,8 +73,7 @@ func (s *ControllerService) ProcessMessage(msg *message.Message) {
 		return
 	}
 	err = s.Handler.Message(msg)
-	if err == nil {
-		return
+	if err != nil {
+		slog.Error(err.Error())
 	}
-	slog.Error("Unable to process message", "handler error", err)
 }

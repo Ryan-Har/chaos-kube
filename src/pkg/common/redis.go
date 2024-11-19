@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"github.com/Ryan-Har/chaos-kube/pkg/config"
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
+	"github.com/Ryan-Har/chaos-kube/pkg/streams"
 	"github.com/go-redis/redis/v8"
 	"log/slog"
 	"time"
@@ -24,8 +25,8 @@ func NewRedisClient(cfg config.RedisConfig) *RedisClientWrapper {
 	return &RedisClientWrapper{client}
 }
 
-// Retrieves messages from redis stream and adds them to messageChan.
-func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, messageChan chan<- message.Message) {
+// Retrieves messages from one redis stream and adds them to messageChan.
+func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, messageChan *chan message.Message) {
 	ctx := context.Background()
 	for {
 		messages, err := c.XReadGroup(ctx, rExArgs).Result()
@@ -51,8 +52,10 @@ func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, mes
 					slog.Error("Error unmarshalling JSON data to message.Message", "error", err, "data", data)
 					continue
 				}
-				slog.Debug("received message", "stream", rExArgs.Streams[0], "consumer group", rExArgs.Group, "message", data)
-				messageChan <- data
+				slog.Info("received message", "stream", rExArgs.Streams[0], "consumer group", rExArgs.Group, "message", data)
+				*messageChan <- data
+				// ack message now that it's being handled
+				c.XAck(ctx, rExArgs.Streams[0], rExArgs.Consumer, xMessage.ID)
 			}
 		}
 	}
@@ -65,17 +68,18 @@ func (c *RedisClientWrapper) CreateConsumerGroup(stream string, consumerGroup st
 }
 
 // Send Message to Specific stream
-func (c *RedisClientWrapper) SendMessage(msg *message.Message, stream string) error {
+func (c *RedisClientWrapper) SendMessageToStream(msg *message.Message, stream streams.RedisStreams) error {
 	if err := msg.Validate(); err != nil {
 		return err
 	}
+	slog.Info("sending message", "stream", stream, "message", msg)
 	jsonMsg, err := json.Marshal(msg)
 	if err != nil {
 		return err
 	}
 	ctx := context.Background()
 	_, err = c.XAdd(ctx, &redis.XAddArgs{
-		Stream: stream,
+		Stream: stream.String(),
 		Values: map[string]interface{}{
 			"data": jsonMsg,
 		},
