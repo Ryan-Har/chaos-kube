@@ -1,22 +1,42 @@
 package handler
 
 import (
+	"context"
+	"fmt"
 	"github.com/Ryan-Har/chaos-kube/pkg/common"
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
 	"github.com/Ryan-Har/chaos-kube/pkg/streams"
+	"github.com/Ryan-Har/chaos-kube/pkg/tasks"
 	"github.com/google/uuid"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes"
+	"k8s.io/client-go/rest"
 )
 
 type ExecutorHandler struct {
-	Redis  common.RedisClient
-	Source string
+	Redis     common.RedisClient
+	Source    string
+	clientSet *kubernetes.Clientset
 }
 
-func NewExecutorHandler(redisClient common.RedisClient, consumerGroup string) *ExecutorHandler {
-	return &ExecutorHandler{
-		Redis:  redisClient,
-		Source: consumerGroup,
+func NewExecutorHandler(redisClient common.RedisClient, consumerGroup string) (*ExecutorHandler, error) {
+	// Create in-cluster config (automatically uses the service account token and API server address)
+	config, err := rest.InClusterConfig()
+	if err != nil {
+		return &ExecutorHandler{}, err
 	}
+
+	// Create the clientset (used to interact with the Kubernetes API)
+	clientset, err := kubernetes.NewForConfig(config)
+	if err != nil {
+		return &ExecutorHandler{}, err
+	}
+
+	return &ExecutorHandler{
+		Redis:     redisClient,
+		Source:    consumerGroup,
+		clientSet: clientset,
+	}, nil
 }
 
 func (h *ExecutorHandler) Message(msg *message.Message) error {
@@ -26,22 +46,19 @@ func (h *ExecutorHandler) Message(msg *message.Message) error {
 		// generate uuid for experiment
 		// start experiment
 		// send jobStart message
+		h.listPods()
 		returnMsg := message.New(
 			message.WithType(message.ExperimentStart),
 			message.WithResponseID(msg.ID),
 			message.WithSource(h.Source),
-			message.WithContents(message.Contents{
-				Status: message.Success,
-				Error:  nil,
-				Data: &message.ExperimentStartContentData{
-					ExperimentID: experimentId,
-				},
+			message.WithContents(&tasks.Task{
+				ID: experimentId,
 			}),
 		)
 		err := h.Redis.SendMessageToStream(returnMsg, streams.ExperimentControl)
 		return err
 	case message.ExperimentStopRequest:
-		experimentStopRequestData, ok := msg.Contents.Data.(message.ExperimentStopContentData)
+		experimentStopRequestData, ok := msg.Contents.(*tasks.Task)
 		if !ok {
 			return &message.MessageNotProcessedError{
 				ID:     msg.ID,
@@ -57,13 +74,8 @@ func (h *ExecutorHandler) Message(msg *message.Message) error {
 			message.WithType(message.ExperimentStop),
 			message.WithResponseID(msg.ID),
 			message.WithSource(h.Source),
-			message.WithContents(message.Contents{
-				Status: message.Success,
-				Error:  nil,
-				Data: &message.ExperimentStopContentData{
-					ExperimentID: experimentStopRequestData.ExperimentID,
-					Progress:     "success",
-				},
+			message.WithContents(tasks.Task{
+				ID: experimentStopRequestData.ID,
 			}),
 		)
 		h.Redis.SendMessageToStream(returnMsg, streams.ExperimentControl)
@@ -74,5 +86,18 @@ func (h *ExecutorHandler) Message(msg *message.Message) error {
 			Type:   msg.Type,
 			Reason: "ExecutorHandler not configured to handle type",
 		}
+	}
+}
+
+func (h *ExecutorHandler) listPods() {
+	// List pods in the "default" namespace
+	pods, err := h.clientSet.CoreV1().Pods("chaos-kube").List(context.TODO(), metav1.ListOptions{})
+	if err != nil {
+		panic(err.Error())
+	}
+
+	fmt.Println("Pods in the 'chaos-kube' namespace:")
+	for _, pod := range pods.Items {
+		fmt.Println(" -", pod.Name)
 	}
 }

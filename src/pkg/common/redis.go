@@ -29,7 +29,7 @@ func NewRedisClient(cfg config.RedisConfig) *RedisClientWrapper {
 // Retrieves messages from one redis stream and adds them to messageChan.
 func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, messageChan *chan message.Message) {
 	ctx := context.Background()
-	slog.Info("bagan reading redis stream", "stream", rExArgs.Streams[0])
+	slog.Info("began reading redis stream", "stream", rExArgs.Streams[0])
 	for {
 		retryOnError("read stream", func() error {
 			messages, err := c.XReadGroup(ctx, rExArgs).Result()

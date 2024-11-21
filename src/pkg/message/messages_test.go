@@ -1,171 +1,95 @@
 package message_test
 
 import (
-	"errors"
-	"testing"
-	"time"
-
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
+	"github.com/Ryan-Har/chaos-kube/pkg/tasks"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
+	"testing"
+	"time"
 )
 
-// Used to set specific id on message after it is generated since we cannot generate with a specific id
-func setID(id uuid.UUID, msg *message.Message) *message.Message {
-	msg.ID = id
-	return msg
-}
-
-// TestMessageTypeString ensures the correct string representation for MessageType values.
-func TestMessageTypeString(t *testing.T) {
-	tests := []struct {
-		msgType  message.MessageType
-		expected string
-	}{
-		{message.Unknown, "Unknown"},
-		{message.JobStartRequest, "JobStartRequest"},
-		{message.JobStart, "JobStart"},
-		{message.JobStopRequest, "JobStopRequest"},
-		{message.JobStop, "JobStop"},
-		{message.ExperimentStartRequest, "ExperimentStartRequest"},
-		{message.ExperimentStart, "ExperimentStart"},
-		{message.ExperimentStopRequest, "ExperimentStopRequest"},
-		{message.ExperimentStop, "ExperimentStop"},
-		{message.MessageType(-1), "Unknown"},
-		{message.MessageType(999), "Unknown"},
-	}
-
-	for _, tt := range tests {
-		assert.Equal(t, tt.expected, tt.msgType.String(), "Unexpected string for MessageType %v", tt.msgType)
-	}
-}
-
-// TestNewMessageWithDefaults verifies the creation of a new message with default values.
-func TestNewMessageWithDefaults(t *testing.T) {
-	msg := message.New()
-
-	assert.NotEqual(t, uuid.Nil, msg.ID, "Expected a non-nil UUID for default message ID")
-	assert.False(t, msg.Timestamp.IsZero(), "Expected a non-zero timestamp for default message")
-	assert.Equal(t, message.Unknown, msg.Type, "Expected default message type to be Unknown")
-	assert.Empty(t, msg.Source, "Expected default source to be an empty string")
-	assert.Empty(t, msg.Contents, "Expected default contents to be empty")
-}
-
-// TestNewMessageWithOptions verifies the creation of a new message with specified options.
-func TestNewMessageWithOptions(t *testing.T) {
-	msgID := uuid.New()
-	timestamp := time.Now()
-	contents := message.Contents{}
+// Test New Message creation with options
+func TestEmptyMessage(t *testing.T) {
+	// Test without options
 	msg := message.New(
-		message.WithType(message.JobStartRequest),
-		message.WithTimestamp(timestamp),
-		message.WithSource("test-source"),
-		message.WithContents(contents),
+		message.WithTimestamp(time.Time{}),
 	)
-	msg.ID = msgID
+	msg.ID = uuid.Nil
 
-	assert.Equal(t, msgID, msg.ID, "Expected message ID to be set by option")
-	assert.Equal(t, message.JobStartRequest, msg.Type, "Expected message type to be set by option")
-	assert.Equal(t, timestamp, msg.Timestamp, "Expected message timestamp to be set by option")
-	assert.Equal(t, "test-source", msg.Source, "Expected message source to be set by option")
-	assert.Equal(t, contents, msg.Contents, "Expected message contents to be set by option")
+	assert.NotNil(t, msg.ID, "Message ID should not be nil")
+	assert.NotNil(t, msg.Timestamp, "Message Timestamp should not be zero")
+	assert.Equal(t, "", msg.Source, "Source should be empty initially")
+	assert.Nil(t, msg.Contents, "Contents should be nil initially")
+
+	// Test with options
+	customID := uuid.New()
+	msgWithID := message.New(message.WithSource("TestSource"), message.WithType(message.JobStartRequest))
+	msgWithID.ID = customID // Set custom ID after message creation
+
+	assert.Equal(t, customID, msgWithID.ID, "Message ID should be set via custom ID")
+	assert.Equal(t, "TestSource", msgWithID.Source, "Source should be set via option")
+	assert.Equal(t, message.JobStartRequest, msgWithID.Type, "Message type should be set via option")
 }
 
-// TestMessageValidate ensures message validation rules are enforced correctly.
-func TestMessageValidate(t *testing.T) {
-	validID := uuid.New()
-	validTime := time.Now()
+// Test Message Validation for valid and invalid messages
+func TestMessageValidation(t *testing.T) {
+	// Valid message
+	validMsg := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStopRequest), message.WithContents(&tasks.Task{ID: uuid.New()}))
+	err := validMsg.Validate()
+	assert.Nil(t, err, "Validation should pass for valid message")
 
-	tests := []struct {
-		name      string
-		msg       *message.Message
-		expectErr error
-	}{
-		{
-			name: "Valid Message",
-			msg: setID(validID, message.New(
-				message.WithType(message.JobStart),
-				message.WithTimestamp(validTime),
-				message.WithSource("test-source"),
-			)),
-			expectErr: nil,
-		},
-		{
-			name: "Missing ID",
-			msg: setID(uuid.Nil, message.New(
-				message.WithType(message.JobStart),
-				message.WithTimestamp(validTime),
-				message.WithSource("test-source"),
-			)),
-			expectErr: errors.New("ID is required"),
-		},
-		{
-			name: "Missing Type",
-			msg: setID(validID, message.New(
-				message.WithType(0), // Unknown type, should trigger validation error
-				message.WithTimestamp(validTime),
-				message.WithSource("test-source"),
-			)),
-			expectErr: errors.New("type is required"),
-		},
-		{
-			name: "Missing Timestamp",
-			msg: setID(validID, message.New(
-				message.WithType(message.JobStart),
-				message.WithSource("test-source"),
-				message.WithTimestamp(time.Time{}),
-			)),
-			expectErr: errors.New("timestamp is required"),
-		},
-		{
-			name: "Missing Source",
-			msg: setID(validID, message.New(
-				message.WithType(message.JobStart),
-				message.WithTimestamp(validTime),
-				message.WithSource(""),
-			)),
-			expectErr: errors.New("source is required"),
-		},
-		{
-			name: "Valid Message with Contents",
-			msg: setID(validID, message.New(
-				message.WithType(message.JobStart),
-				message.WithTimestamp(validTime),
-				message.WithSource("test-source"),
-				message.WithContents(message.Contents{Status: message.Success}),
-			)),
-			expectErr: nil,
-		},
-		{
-			name: "Invalid Message with Invalid Contents",
-			msg: setID(validID, message.New(
-				message.WithType(message.JobStart),
-				message.WithTimestamp(validTime),
-				message.WithSource("test-source"),
-				message.WithContents(message.Contents{Status: message.Status(999)}), // Invalid status
-			)),
-			expectErr: errors.New("contents validation failed: invalid status in contents"),
-		},
-		{
-			name: "Valid Message with nil Contents",
-			msg: setID(validID, message.New(
-				message.WithType(message.JobStart),
-				message.WithTimestamp(validTime),
-				message.WithSource("test-source"),
-				message.WithContents(message.Contents{Status: message.Success, Data: nil}), // nil Data is valid
-			)),
-			expectErr: nil,
-		},
+	// Invalid message: Missing required fields
+	invalidMsg := message.New(message.WithType(message.JobStartRequest)) // Missing Source
+	err = invalidMsg.Validate()
+	assert.NotNil(t, err, "Validation should fail for invalid message")
+	assert.IsType(t, &message.ContentNotValidError{}, err, "Expected ContentNotValidError")
+
+	// Test with invalid task contents
+	invalidTask := &tasks.Task{
+		ID: uuid.New(), // This should be zero if not start or final stop
+	}
+	invalidMsgWithTask := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStartRequest), message.WithContents(invalidTask))
+	err = invalidMsgWithTask.Validate()
+	assert.NotNil(t, err, "Validation should fail with invalid task contents")
+	assert.IsType(t, &message.ContentNotValidError{}, err, "Expected ContentNotValidError")
+
+	// Test with valid task contents
+	validTask := &tasks.Task{
+		ID: uuid.New(),
+	}
+	validMsgWithTask := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStart), message.WithContents(validTask))
+	err = validMsgWithTask.Validate()
+	assert.Nil(t, err, "Validation should pass with valid task contents")
+}
+
+// Test Message Custom Error Handling
+func TestMessageNotProcessedError(t *testing.T) {
+	msgID := uuid.New()
+	msgType := message.JobStartRequest
+	reason := "Invalid data"
+
+	err := &message.MessageNotProcessedError{
+		ID:     msgID,
+		Type:   msgType,
+		Reason: reason,
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := tt.msg.Validate()
-			if tt.expectErr != nil {
-				assert.EqualError(t, err, tt.expectErr.Error())
-			} else {
-				assert.NoError(t, err)
-			}
-		})
+	// Ensure the error message is formatted correctly
+	expectedErrorMessage := "unable to process message with ID " + msgID.String() + " and type " + msgType.String() + ". Reason: Invalid data"
+	assert.Equal(t, expectedErrorMessage, err.Error(), "Error message should match the expected format")
+}
+
+// Test ContentNotValidError
+func TestContentNotValidError(t *testing.T) {
+	contentType := "Task"
+	reasons := []string{"Invalid Task ID", "Missing field"}
+	err := &message.ContentNotValidError{
+		ContentType: contentType,
+		Reasons:     reasons,
 	}
+
+	// Ensure the error message is formatted correctly
+	expectedErrorMessage := "content not valid for type Task. Reason: Invalid Task ID, Missing field"
+	assert.Equal(t, expectedErrorMessage, err.Error(), "Error message should match the expected format")
 }

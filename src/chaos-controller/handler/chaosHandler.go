@@ -1,11 +1,13 @@
 package handler
 
 import (
-	"log/slog"
-
 	"github.com/Ryan-Har/chaos-kube/pkg/common"
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
 	"github.com/Ryan-Har/chaos-kube/pkg/streams"
+	"github.com/Ryan-Har/chaos-kube/pkg/tasks"
+	"github.com/google/uuid"
+	"log/slog"
+	"time"
 )
 
 type ChaosHandler struct {
@@ -60,6 +62,15 @@ func (c *ChaosHandler) SendNewExperimentStartRequest() {
 	msg := message.New(
 		message.WithType(message.ExperimentStartRequest),
 		message.WithSource(c.Source),
+		message.WithContents(&tasks.Task{
+			ID:          uuid.New(),
+			Type:        tasks.TaskDeletePod,
+			NameSpace:   "default",
+			Target:      "hello",
+			Details:     map[string]interface{}{"test": "ing"},
+			ScheduledAt: time.Now(),
+			Status:      tasks.StatusPending,
+		}),
 	)
 	returnChan := make(chan message.Message, 1)
 	c.ResponseManager.Add(msg.ID, returnChan)

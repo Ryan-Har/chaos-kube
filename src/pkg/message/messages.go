@@ -1,10 +1,11 @@
 package message
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/Ryan-Har/chaos-kube/pkg/tasks"
 	"github.com/google/uuid"
+	"strings"
 	"time"
 )
 
@@ -18,7 +19,7 @@ type Message struct {
 	Type       MessageType `json:"type"`                 //message type, enum list
 	Timestamp  time.Time   `json:"timestamp"`            //timestamp message was created
 	Source     string      `json:"source"`               //the service that created the message
-	Contents   Contents    `json:"contents,omitempty"`
+	Contents   interface{} `json:"contents,omitempty"`
 }
 
 // MessageType represents the different types of messages that can be send through redis
@@ -73,6 +74,21 @@ func (e *MessageNotProcessedError) Is(err error) bool {
 	return errors.As(err, &target)
 }
 
+// Define a custom error type for when a message cannot be processed
+type ContentNotValidError struct {
+	ContentType string
+	Reasons     []string
+}
+
+func (e *ContentNotValidError) Error() string {
+	return fmt.Sprintf("content not valid for type %v. Reason: %s", e.ContentType, strings.Join(e.Reasons, ", "))
+}
+
+func (e *ContentNotValidError) Is(err error) bool {
+	var target *ContentNotValidError
+	return errors.As(err, &target)
+}
+
 // Functional option type that modifies a Message.
 type MessageOption func(*Message)
 
@@ -107,7 +123,7 @@ func WithSource(source string) MessageOption {
 }
 
 // WithContents sets the Contents of the message.
-func WithContents(contents Contents) MessageOption {
+func WithContents(contents interface{}) MessageOption {
 	return func(m *Message) {
 		m.Contents = contents
 	}
@@ -137,75 +153,47 @@ func New(opts ...MessageOption) *Message {
 }
 
 // method to validate message is ok to send
-// TODO: Add vailidation for contents based on Type, certain types cannot have nil contents
 func (m *Message) Validate() error {
+	var dataType string
+	var failReasons []string
+
 	if m.ID == uuid.Nil {
-		return errors.New("ID is required")
+		failReasons = append(failReasons, "message ID is required")
 	}
 	if m.Type == 0 {
-		return errors.New("type is required")
+		failReasons = append(failReasons, "message type is unknown")
 	}
 	if m.Timestamp.IsZero() {
-		return errors.New("timestamp is required")
+		failReasons = append(failReasons, "message timestamp is required")
 	}
 	if m.Source == "" {
-		return errors.New("source is required")
-	}
-	// Validate the Contents field, if it exists
-	if err := m.Contents.Validate(); err != nil {
-		return fmt.Errorf("contents validation failed: %w", err)
-	}
-	return nil
-}
-
-// Custom UnmarshalJSON for Message to handle the dynamic unmarshalling of Contents.Data based on Type
-func (m *Message) UnmarshalJSON(data []byte) error {
-	// First, unmarshal the message without the Data field
-	type Alias Message
-	aux := &struct {
-		*Alias
-		Contents *struct { // Use pointer to allow nil contents
-			Status Status          `json:"status"`
-			Error  error           `json:"error,omitempty"`
-			Data   json.RawMessage `json:"data,omitempty"` // Use RawMessage for deferred unmarshalling
-		} `json:"contents,omitempty"` // Handle missing contents gracefully
-	}{
-		Alias: (*Alias)(m),
+		failReasons = append(failReasons, "source is required")
 	}
 
-	// Unmarshal the JSON into the auxiliary struct
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-
-	if aux.Contents != nil {
-		m.Contents.Status = aux.Contents.Status
-		m.Contents.Error = aux.Contents.Error
-	}
-
-	switch m.Type {
-	// In these cases we expect no content
-	case ExperimentStartRequest:
-		m.Contents = Contents{}
-		return nil
-	case ExperimentStart:
-		if aux.Contents != nil {
-			var data ExperimentStartContentData
-			if err := json.Unmarshal(aux.Contents.Data, &data); err != nil {
-				return fmt.Errorf("failed to unmarshal ExperimentStartContentData: %w", err)
+	switch data := m.Contents.(type) {
+	case *tasks.Task:
+		dataType = "Task"
+		// only ID required unless it is a start request or the final stop
+		if m.Type == ExperimentStartRequest || m.Type == ExperimentStop {
+			errs, ok := data.Validate()
+			if !ok {
+				failReasons = append(failReasons, errs...)
 			}
-			m.Contents.Data = data
+			break
 		}
-	case ExperimentStopRequest:
-		if aux.Contents != nil {
-			var data ExperimentStopRequestContentData
-			if err := json.Unmarshal(aux.Contents.Data, &data); err != nil {
-				return fmt.Errorf("failed to unmarshal ExperimentStopRequestContentData: %w", err)
-			}
-			m.Contents.Data = data
+		if data.ID == uuid.Nil {
+			failReasons = append(failReasons, "task UUID: ID must not be the zero value")
 		}
 	default:
-		return fmt.Errorf("unknown message type: %v", m.Type)
+		dataType = "Unknown"
+		failReasons = append(failReasons, "Unknown Contents Data Type")
+	}
+
+	if len(failReasons) > 0 {
+		return &ContentNotValidError{
+			ContentType: dataType,
+			Reasons:     failReasons,
+		}
 	}
 	return nil
 }

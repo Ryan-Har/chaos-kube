@@ -17,7 +17,10 @@ func main() {
 	}
 
 	redisClient := common.NewRedisClient(cfg.RedisConfig)
-	hndlr := handler.NewExecutorHandler(redisClient, cfg.RedisStreams.ConsumerGroup)
+	hndlr, err := handler.NewExecutorHandler(redisClient, cfg.RedisStreams.ConsumerGroup)
+	if err != nil {
+		slog.Error("unable to load executor handler", "error", err)
+	}
 	executor := services.NewExecutorService(cfg, hndlr)
 	executor.Start()
 }
