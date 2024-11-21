@@ -27,7 +27,7 @@ func (s *ExecutorService) Start() {
 
 func (s *ExecutorService) readStreams() {
 	for _, stream := range s.cfg.RedisStreams.ConsumerStreams {
-		s.Handler.Redis.CreateConsumerGroup(stream, s.cfg.RedisStreams.ConsumerGroup)
+		go s.Handler.Redis.CreateConsumerGroup(stream, s.cfg.RedisStreams.ConsumerGroup)
 
 		go func() {
 			rExArgs := &redis.XReadGroupArgs{

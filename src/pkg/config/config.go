@@ -44,6 +44,7 @@ func init() {
 }
 
 func Load(serviceName string) (*Config, error) {
+	slog.Info(fmt.Sprintf("loading config for %s", serviceName))
 	var config Config
 	config.Hostname = getHostname()
 	rc, err := loadRedisConfig()
@@ -96,7 +97,9 @@ func getHostname() string {
 
 func loadRedisConfig() (RedisConfig, error) {
 	var rc RedisConfig
-	rc.Addr = getEnvWithDefault("REDIS_ADDR", "localhost:6379")
+	redisHost := getEnvWithDefault("REDIS_HOST", "localhost")
+	redisPort := getEnvWithDefault("REDIS_PORT", "6379")
+	rc.Addr = fmt.Sprintf("%s:%s", redisHost, redisPort)
 	rc.Password = getEnvWithDefault("REDIS_PASSWORD", "")
 	db, err := strconv.Atoi(getEnvWithDefault("REDIS_DB", "0"))
 	if err == nil {

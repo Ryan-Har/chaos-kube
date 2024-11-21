@@ -1,0 +1,32 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.chaosController.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.chaosController.name }}
+spec:
+  replicas: {{ .Values.chaosController.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.chaosController.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.chaosController.name }}
+    spec:
+      containers:
+      - name: {{ .Values.chaosController.name }}
+        image: "{{ .Values.chaosController.image.repository }}:{{ .Values.chaosController.image.tag }}"
+        env:
+        - name: REDIS_HOST
+          value: "{{ .Values.redis.name }}-service"
+        - name: REDIS_PORT
+          value: "{{ .Values.redis.service.port }}"
+        resources:
+          requests:
+            memory: "{{ .Values.chaosController.resources.requests.memory }}"
+            cpu: "{{ .Values.chaosController.resources.requests.cpu }}"
+          limits:
+            memory: "{{ .Values.chaosController.resources.limits.memory }}"
+            cpu: "{{ .Values.chaosController.resources.limits.cpu }}"

@@ -1,0 +1,54 @@
+namespace: "chaos-kube"
+
+# Global resources for the Helm chart
+global:
+  imagePullPolicy: Always
+
+chaosController:
+  name: "chaos-controller"
+  replicaCount: 1
+  image:
+    repository: "pandects/chaos-controller"
+    tag: "latest"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+chaosExecutor:
+  name: "chaos-executor"
+  serviceAccountName: chaos-executor-service-account
+  roleName: chaos-executor-role
+  roleBindingName: chaos-executor-role-binding
+  replicaCount: 1
+  image:
+    repository: "pandects/chaos-executor"
+    tag: "latest"
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "500m"
+
+# Redis service
+redis:
+  name: "redis"
+  replicaCount: 1
+  image:
+    repository: "redis"
+    tag: "latest"
+  service:
+    type: ClusterIP
+    port: 6379
+  resources:
+    requests:
+      memory: "50Mi"
+      cpu: "50m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"

@@ -1,0 +1,33 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Values.chaosExecutor.name }}
+  namespace: {{ .Values.namespace }}
+  labels:
+    app: {{ .Values.chaosExecutor.name }}
+spec:
+  replicas: {{ .Values.chaosExecutor.replicaCount }}
+  selector:
+    matchLabels:
+      app: {{ .Values.chaosExecutor.name }}
+  template:
+    metadata:
+      labels:
+        app: {{ .Values.chaosExecutor.name }}
+    spec:
+      serviceAccountName: {{ .Values.chaosExecutor.serviceAccountName }}
+      containers:
+      - name: {{ .Values.chaosExecutor.name }}
+        image: "{{ .Values.chaosExecutor.image.repository }}:{{ .Values.chaosExecutor.image.tag }}"
+        env:
+        - name: REDIS_HOST
+          value: "{{ .Values.redis.name }}-service"
+        - name: REDIS_PORT
+          value: "{{ .Values.redis.service.port }}"
+        resources:
+          requests:
+            memory: "{{ .Values.chaosExecutor.resources.requests.memory }}"
+            cpu: "{{ .Values.chaosExecutor.resources.requests.cpu }}"
+          limits:
+            memory: "{{ .Values.chaosExecutor.resources.limits.memory }}"
+            cpu: "{{ .Values.chaosExecutor.resources.limits.cpu }}"

@@ -1,13 +1,10 @@
 # Project variables
 PROJECT_NAME := chaos-kube
-REGISTRY := my-docker-registry
+REGISTRY := pandects
 VERSION := $(shell git describe --tags --always)
 
 # Services
-SERVICES := api chaos-controller chaos-configurator chaos-executor log-aggregator
-
-# Kubernetes namespace for deployment
-NAMESPACE := chaos-kube
+SERVICES := chaos-executor chaos-controller #api chaos-configurator log-aggregator
 
 # Docker build and push
 .PHONY: build push deploy clean run
@@ -20,10 +17,8 @@ build: $(patsubst %,build-%, $(SERVICES))
 
 # Build each service
 build-%:
-	@echo "Building service $*..."
-	@cd cmd/$* && GOOS=linux GOARCH=amd64 go build -o ../../bin/$* main.go
 	@echo "Building Docker image for $*..."
-	docker build -t $(REGISTRY)/$(PROJECT_NAME)-$*:$(VERSION) -f cmd/$*/Dockerfile .
+	docker build -t $(REGISTRY)/$*:latest -f src/cmd/$*/Dockerfile src
 
 # Push all services to registry
 push: $(patsubst %,push-%, $(SERVICES))
@@ -31,40 +26,26 @@ push: $(patsubst %,push-%, $(SERVICES))
 # Push each service to Docker registry
 push-%:
 	@echo "Pushing $* to Docker registry..."
-	docker push $(REGISTRY)/$(PROJECT_NAME)-$*:$(VERSION)
+	docker push $(REGISTRY)/$*:latest
 
 # Deploy all services to Kubernetes
-deploy: $(patsubst %,deploy-%, $(SERVICES))
-
-# Deploy each service using kubectl apply or Helm
-deploy-%:
-	@echo "Deploying $* to Kubernetes..."
-	kubectl apply -f deployments/$*.yaml -n $(NAMESPACE)
+deploy:
+	helm install chaos-kube chaos-kube-chart -f chaos-kube-chart/values/values-dev.yaml --create-namespace || helm upgrade chaos-kube chaos-kube-chart -f chaos-kube-chart/values/values-dev.yaml
 
 # Test all services
 test: 
-	go test ./...
-
-# Run tests for each service
-test-%:
-	@echo "Running tests for $*..."
-	cd $* && go test ./...
+	@cd src && go test ./...
 
 # Clean build artifacts and images
 clean:
 	@echo "Cleaning up..."
 	rm -rf bin/*
 	@for service in $(SERVICES); do \
-		docker rmi $(REGISTRY)/$(PROJECT_NAME)-$$service:$(VERSION) || true; \
+		docker rmi $(REGISTRY)/$$service:$(VERSION) || true; \
 	done
 
-# Individual service targets for convenience
-# Build, push, and deploy a single service
-%: test-% build-% push-% deploy-%
-	@echo "Service $* has been tested, built, pushed, and deployed."
-
 # Run target to test, build, and deploy all services
-run: test build deploy
+run: test build push deploy
 	@echo "All services have been tested, built, and deployed."
 
 
