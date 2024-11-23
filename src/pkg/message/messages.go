@@ -22,6 +22,13 @@ type Message struct {
 	Contents   interface{} `json:"contents,omitempty"`
 }
 
+// holds both the message with ack and nack functions
+type MessageWithRedisOperations struct {
+	Message Message
+	Ack     func() error // Acknowledge the message to remove it from the pending list
+	Nack    func() error // Release the message so that another consumer can handle it
+}
+
 // MessageType represents the different types of messages that can be send through redis
 type MessageType int
 

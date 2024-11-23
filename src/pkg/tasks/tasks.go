@@ -1,8 +1,13 @@
 package tasks
 
 import (
-	"github.com/google/uuid"
+	"errors"
+	"fmt"
+	"log/slog"
+	"strconv"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 type Task struct {
@@ -13,6 +18,7 @@ type Task struct {
 	Details     map[string]interface{} `json:"details,omitempty"`
 	ScheduledAt time.Time              `json:"scheduled_at,omitempty"`
 	Status      TaskStatus             `json:"status,omitempty"`
+	Timeout     int                    `json:"timeout,omitempty"` //timeout, in seconds
 }
 
 type TaskStatus string
@@ -55,6 +61,24 @@ const (
 	TaskRotateSecrets            TaskType = "RotateSecrets"
 )
 
+// Define a custom error type for when a Task has an error
+type TaskError struct {
+	ID     uuid.UUID
+	Type   TaskType
+	Reason string
+}
+
+// Implement the Error() method for TaskError
+func (e *TaskError) Error() string {
+	return fmt.Sprintf("unable to process task with ID %v and type %v. Reason: %s", e.ID, e.Type, e.Reason)
+}
+
+// Implement the Is method for TaskError
+func (e *TaskError) Is(err error) bool {
+	var target *TaskError
+	return errors.As(err, &target)
+}
+
 func (t *Task) Validate() ([]string, bool) {
 	var failReasons []string
 
@@ -83,4 +107,49 @@ func (t *Task) Validate() ([]string, bool) {
 	}
 
 	return failReasons, true
+}
+
+// converts task details into TaskOptions interface
+func (t *Task) Options() TaskOptions {
+	switch t.Type {
+	case TaskDeletePod:
+		if len(t.Details) == 0 {
+			return defaultDeletePodOptions()
+		}
+		var gracePeriod int64
+		gpVal, ok := t.Details["GracePeriodSeconds"]
+		if ok {
+			gp, err := xToInt64(gpVal)
+			if err != nil {
+				slog.Warn("build task options failure, using defaults", "convert error", err.Error())
+			} else {
+				gracePeriod = gp
+			}
+		}
+		return &DeletePodOptions{
+			GracePeriodSeconds: &gracePeriod,
+		}
+	default:
+		return nil
+	}
+}
+
+// accepts any of int, int32, int64 or string and attempts to convert to int64
+func xToInt64(x interface{}) (int64, error) {
+	switch v := x.(type) {
+	case int:
+		return int64(v), nil
+	case int32:
+		return int64(v), nil
+	case int64:
+		return v, nil
+	case string:
+		num, err := strconv.ParseInt(v, 10, 64)
+		if err != nil {
+			return 0, fmt.Errorf("unable to convert string %s to int64", v)
+		}
+		return num, nil
+	default:
+		return 0, errors.ErrUnsupported
+	}
 }

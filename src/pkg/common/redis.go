@@ -27,7 +27,7 @@ func NewRedisClient(cfg config.RedisConfig) *RedisClientWrapper {
 }
 
 // Retrieves messages from one redis stream and adds them to messageChan.
-func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, messageChan *chan message.Message) {
+func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, messageChan *chan message.MessageWithRedisOperations) {
 	ctx := context.Background()
 	slog.Info("began reading redis stream", "stream", rExArgs.Streams[0])
 	for {
@@ -52,7 +52,18 @@ func (c *RedisClientWrapper) ReadStreamToChan(rExArgs *redis.XReadGroupArgs, mes
 						continue
 					}
 					slog.Info("received message", "stream", rExArgs.Streams[0], "consumer group", rExArgs.Group, "message", data)
-					*messageChan <- data
+
+					returnMsg := message.MessageWithRedisOperations{
+						Message: data,
+						Ack: func() error {
+							return c.Acknowledge(rExArgs.Streams[0], rExArgs.Consumer, xMessage.ID)
+						},
+						Nack: func() error {
+							return c.Claim(rExArgs.Streams[0], rExArgs.Consumer, rExArgs.Group, xMessage.ID)
+						},
+					}
+
+					*messageChan <- returnMsg
 					// ack message now that it's being handled
 					c.XAck(ctx, rExArgs.Streams[0], rExArgs.Consumer, xMessage.ID)
 				}
@@ -92,6 +103,24 @@ func (c *RedisClientWrapper) SendMessageToStream(msg *message.Message, stream st
 			"data": jsonMsg,
 		},
 	}).Result()
+	return err
+}
+
+// Acknowledge is a wrapper around the XAck method to acknowledge a message.
+func (c *RedisClientWrapper) Acknowledge(stream string, consumer string, messageID string) error {
+	return c.XAck(context.Background(), stream, consumer, messageID).Err()
+}
+
+// Claim is a wrapper around the XClaim method to claim a message for immediate processing.
+func (c *RedisClientWrapper) Claim(stream string, consumer string, group string, messageID string) error {
+	claimArgs := &redis.XClaimArgs{
+		Stream:   stream,
+		Group:    group,
+		Consumer: consumer,
+		MinIdle:  1000, // set min idle time in ms
+		Messages: []string{messageID},
+	}
+	_, err := c.XClaim(context.Background(), claimArgs).Result()
 	return err
 }
 

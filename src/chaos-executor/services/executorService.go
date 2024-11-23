@@ -1,11 +1,12 @@
 package services
 
 import (
+	"log/slog"
+
 	"github.com/Ryan-Har/chaos-kube/chaos-executor/handler"
 	"github.com/Ryan-Har/chaos-kube/pkg/config"
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
 	"github.com/go-redis/redis/v8"
-	"log/slog"
 )
 
 type ExecutorService struct {
@@ -21,6 +22,7 @@ func NewExecutorService(cfg *config.Config, handler *handler.ExecutorHandler) *E
 }
 
 func (s *ExecutorService) Start() {
+	go s.Handler.HandleOperationContexts()
 	go s.readStreams()
 	select {}
 }
@@ -38,7 +40,7 @@ func (s *ExecutorService) readStreams() {
 				Count:    1, //messages at a time
 			}
 
-			receive := make(chan message.Message)
+			receive := make(chan message.MessageWithRedisOperations)
 			go s.Handler.Redis.ReadStreamToChan(rExArgs, &receive)
 			for msg := range receive {
 				go s.ProcessMessage(&msg)
@@ -47,13 +49,13 @@ func (s *ExecutorService) readStreams() {
 	}
 }
 
-func (s *ExecutorService) ProcessMessage(msg *message.Message) {
-	if msg.Source == s.Handler.Source {
+func (s *ExecutorService) ProcessMessage(msg *message.MessageWithRedisOperations) {
+	if msg.Message.Source == s.Handler.Source {
 		return
 	}
 	err := s.Handler.Message(msg)
+
 	if err != nil {
 		slog.Error(err.Error())
-		return
 	}
 }

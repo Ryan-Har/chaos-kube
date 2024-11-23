@@ -27,8 +27,8 @@ func NewChaosHandler(redisClient common.RedisClient, responseManager common.Resp
 }
 
 // Message handler to route any message that is configured
-func (c *ChaosHandler) Message(msg *message.Message) error {
-	switch msg.Type {
+func (c *ChaosHandler) Message(msg *message.MessageWithRedisOperations) error {
+	switch msg.Message.Type {
 	case message.ExperimentStartRequest:
 		//add Job ExperimentStart Info to database
 		return nil
@@ -50,8 +50,8 @@ func (c *ChaosHandler) Message(msg *message.Message) error {
 		return nil
 	default:
 		return &message.MessageNotProcessedError{
-			ID:   msg.ID,
-			Type: msg.Type,
+			ID:   msg.Message.ID,
+			Type: msg.Message.Type,
 		}
 	}
 }
@@ -67,7 +67,7 @@ func (c *ChaosHandler) SendNewExperimentStartRequest() {
 			Type:        tasks.TaskDeletePod,
 			NameSpace:   "default",
 			Target:      "hello",
-			Details:     map[string]interface{}{"test": "ing"},
+			Details:     map[string]interface{}{},
 			ScheduledAt: time.Now(),
 			Status:      tasks.StatusPending,
 		}),

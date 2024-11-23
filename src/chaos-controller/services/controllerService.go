@@ -10,6 +10,7 @@ import (
 	"github.com/Ryan-Har/chaos-kube/pkg/config"
 	"github.com/Ryan-Har/chaos-kube/pkg/message"
 	"github.com/go-redis/redis/v8"
+	"github.com/google/uuid"
 )
 
 type ControllerService struct {
@@ -49,7 +50,7 @@ func (s *ControllerService) readStreams() {
 				Count:    1, //messages at a time
 			}
 
-			receive := make(chan message.Message)
+			receive := make(chan message.MessageWithRedisOperations)
 			go s.Handler.Redis.ReadStreamToChan(rExArgs, &receive)
 			for msg := range receive {
 				go s.ProcessMessage(&msg)
@@ -60,19 +61,26 @@ func (s *ControllerService) readStreams() {
 
 // Processes the message by sending it to the response manager. If nothing is waiting for this response
 // then the handler takes it
-func (s *ControllerService) ProcessMessage(msg *message.Message) {
-	if msg.Source == s.Handler.Source {
+func (s *ControllerService) ProcessMessage(msg *message.MessageWithRedisOperations) {
+	// source is the consumer group, ignore messages which were sent by us
+	if msg.Message.Source == s.Handler.Source {
 		return
 	}
-	err := s.Handler.ResponseManager.Send(msg)
-	if err == nil {
-		return
-	}
-	if !errors.Is(err, &common.ChannelNotFoundError{}) {
+	// something is waiting on a response
+	if msg.Message.ResponseID != uuid.Nil {
+		err := s.Handler.ResponseManager.Send(&msg.Message)
+		if err == nil {
+			return
+		}
+		// our consumer isn't waiting, nack to allow another to try
+		if errors.Is(err, &common.ChannelNotFoundError{}) {
+			msg.Nack()
+			return
+		}
 		slog.Error("Unknown error when processing message through response manager", "error", err)
 		return
 	}
-	err = s.Handler.Message(msg)
+	err := s.Handler.Message(msg)
 	if err != nil {
 		slog.Error(err.Error())
 	}
