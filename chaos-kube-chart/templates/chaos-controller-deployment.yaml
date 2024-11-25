@@ -18,6 +18,7 @@ spec:
       containers:
       - name: {{ .Values.chaosController.name }}
         image: "{{ .Values.chaosController.image.repository }}:{{ .Values.chaosController.image.tag }}"
+        imagePullPolicy: "Always"
         env:
         - name: REDIS_HOST
           value: "{{ .Values.redis.name }}-service"

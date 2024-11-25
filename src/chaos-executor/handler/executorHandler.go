@@ -58,9 +58,6 @@ func (h *ExecutorHandler) Message(msg *message.MessageWithRedisOperations) error
 	case message.ExperimentStartRequest:
 		err := h.handleExperimentStartRequest(msg)
 
-		// ERROR SOMEWHERE AFTER HERE
-		slog.Error("handleExperimentStart", "error", err)
-
 		respMsg := message.New(
 			message.WithSource(h.Source),
 			message.WithType(message.ExperimentStop),
@@ -83,7 +80,7 @@ func (h *ExecutorHandler) Message(msg *message.MessageWithRedisOperations) error
 		case err == nil:
 			respTask.Status = tasks.StatusCompleted
 		case errors.Is(err, context.Canceled):
-			respTask.Status = tasks.StatusCanceled
+			respTask.Status = tasks.StatusCancelled
 		case errors.Is(err, context.DeadlineExceeded):
 			respTask.Status = tasks.StatusTimedOut
 		default:
@@ -97,33 +94,46 @@ func (h *ExecutorHandler) Message(msg *message.MessageWithRedisOperations) error
 			}
 		}
 		respMsg.Contents = respTask
-		_ = h.Redis.SendMessageToStream(respMsg, streams.ExperimentControl)
-
+		if sendErr := h.Redis.SendMessageToStream(respMsg, streams.ExperimentControl); sendErr != nil {
+			slog.Error("unable to send final message to stream")
+		}
 		// return err for logging
 		return err
 
 	case message.ExperimentStopRequest:
-		experimentStopRequestData, ok := msg.Message.Contents.(tasks.Task)
-		if !ok {
-			return &message.MessageNotProcessedError{
-				ID:     msg.Message.ID,
-				Type:   msg.Message.Type,
-				Reason: "Unable to extract Experiment Stop Request Data from message",
-			}
-		}
+		err := h.handleExperimentStopRequest(msg)
 
-		// Stop experiment
-
-		// Add jobstop message back to the ExperimentControl stream
-		returnMsg := message.New(
+		respMsg := message.New(
+			message.WithSource(h.Source),
 			message.WithType(message.ExperimentStop),
 			message.WithResponseID(msg.Message.ID),
-			message.WithSource(h.Source),
-			message.WithContents(tasks.Task{
-				ID: experimentStopRequestData.ID,
-			}),
 		)
-		h.Redis.SendMessageToStream(returnMsg, streams.ExperimentControl)
+
+		// if message isn't processed, we can't extract the task info, so cannot be handled
+		if errors.Is(err, &message.MessageNotProcessedError{}) {
+			// if TaskID not valid, log warn message but return nil since it's been Nack'd and another executor will handle
+			// or it'll timeout at the controller
+			if msgErr, ok := err.(*message.MessageNotProcessedError); ok && msgErr.Reason == "Task id not valid" {
+				slog.Warn("message received but task id is not an ongoing task", "message id", msg.Message.ID)
+				return nil
+			}
+			respMsg.Contents = err
+			_ = h.Redis.SendMessageToStream(respMsg, streams.ExperimentControl)
+			return err
+		}
+
+		// should never not be ok, MessageNotProcessedError should be invoked first
+		task, _ := common.GenericUnmarshal[tasks.Task](msg.Message.Contents)
+
+		// copy task and set cancelled status
+		respTask := task
+		respTask.Status = tasks.StatusCancelled
+
+		respMsg.Contents = respTask
+		if sendErr := h.Redis.SendMessageToStream(respMsg, streams.ExperimentControl); sendErr != nil {
+			slog.Error("unable to send final message to stream")
+		}
+
 		return nil
 	default:
 		return &message.MessageNotProcessedError{
@@ -134,7 +144,7 @@ func (h *ExecutorHandler) Message(msg *message.MessageWithRedisOperations) error
 	}
 }
 
-// entrypoint for messagestartrequests
+// entrypoint for experiment start requests
 func (h *ExecutorHandler) handleExperimentStartRequest(msg *message.MessageWithRedisOperations) error {
 	// ensure task contents is of correct type
 	task, err := common.GenericUnmarshal[tasks.Task](msg.Message.Contents)
@@ -183,11 +193,12 @@ func (h *ExecutorHandler) handleExperimentStartRequest(msg *message.MessageWithR
 		message.WithType(message.ExperimentStart),
 		message.WithResponseID(msg.Message.ID),
 		message.WithSource(h.Source),
-		message.WithContents(&tasks.Task{
+		message.WithContents(tasks.Task{
 			ID:     task.ID,
 			Status: tasks.StatusRunning,
 		}),
 	)
+
 	if err := h.Redis.SendMessageToStream(returnMsg, streams.ExperimentControl); err != nil {
 		return err
 	}
@@ -199,6 +210,49 @@ func (h *ExecutorHandler) handleExperimentStartRequest(msg *message.MessageWithR
 	delete(h.ongoingTasks, task.ID)
 
 	return err
+}
+
+// entrypoint for experiment cancel requests
+func (h *ExecutorHandler) handleExperimentStopRequest(msg *message.MessageWithRedisOperations) error {
+	// ensure task contents is of correct type
+	task, err := common.GenericUnmarshal[tasks.Task](msg.Message.Contents)
+	if err != nil {
+		return &message.MessageNotProcessedError{
+			ID:     msg.Message.ID,
+			Type:   msg.Message.Type,
+			Reason: "Unable to extract Experiment Stop Request Task Data from message",
+		}
+	}
+
+	if task.ID == uuid.Nil {
+		return &message.MessageNotProcessedError{
+			ID:     msg.Message.ID,
+			Type:   msg.Message.Type,
+			Reason: "Unable to extract Experiment Stop task ID from message",
+		}
+	}
+
+	op, ok := h.ongoingTasks[task.ID]
+	// not in ongoingTasks on this executor, add back to pool
+	if !ok {
+		// NAck message so it gets reclaimed
+		if err := msg.Nack(); err != nil {
+			return err
+		}
+		return &message.MessageNotProcessedError{
+			ID:     msg.Message.ID,
+			Type:   msg.Message.Type,
+			Reason: "Task id not valid",
+		}
+	}
+
+	// Ack message so it doesn't get reprocessed
+	if err := msg.Ack(); err != nil {
+		return err
+	}
+	op.Cancel()
+	delete(h.ongoingTasks, op.ID)
+	return nil
 }
 
 // handles task Operation contexts to ensure that they time out correctly
@@ -228,7 +282,9 @@ func (h *ExecutorHandler) runtask(ctx context.Context, t tasks.Task) error {
 		if !ok {
 			return fmt.Errorf("unable to convert task options to DeleteOptions")
 		}
-		return h.listPods()
+		// temp until we actually delete pods
+		err := h.listPods()
+		return err
 		//return h.deletePod(ctx, t.Target, t.NameSpace, opts)
 	default:
 		return fmt.Errorf("unable to run task of type %v, not configured", t.Type)
@@ -243,7 +299,7 @@ func (h *ExecutorHandler) listPods() error {
 	// List pods in the "default" namespace
 	pods, err := h.clientSet.CoreV1().Pods("chaos-kube").List(context.TODO(), metav1.ListOptions{})
 	if err != nil {
-		panic(err.Error())
+		return err
 	}
 
 	fmt.Println("Pods in the 'chaos-kube' namespace:")

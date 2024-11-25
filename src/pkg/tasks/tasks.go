@@ -30,7 +30,7 @@ const (
 	StatusRunning   TaskStatus = "Running"
 	StatusCompleted TaskStatus = "Completed"
 	StatusFailed    TaskStatus = "Failed"
-	StatusCanceled  TaskStatus = "Canceled"
+	StatusCancelled TaskStatus = "Cancelled"
 	StatusTimedOut  TaskStatus = "TimedOut"
 	StatusRetrying  TaskStatus = "Retrying"
 	StatusSkipped   TaskStatus = "Skipped"

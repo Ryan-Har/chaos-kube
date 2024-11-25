@@ -2,7 +2,7 @@
 PROJECT_NAME := chaos-kube
 REGISTRY := pandects
 VERSION := $(shell git describe --tags --always)
-
+TIMESTAMP := $(shell date +%s)
 # Services
 SERVICES := chaos-executor chaos-controller #api chaos-configurator log-aggregator
 
@@ -18,7 +18,8 @@ build: $(patsubst %,build-%, $(SERVICES))
 # Build each service
 build-%:
 	@echo "Building Docker image for $*..."
-	docker build -t $(REGISTRY)/$*:latest -f src/cmd/$*/Dockerfile src
+	docker build -t $(REGISTRY)/$*:$(TIMESTAMP) -f src/cmd/$*/Dockerfile src
+#docker build -t pandects/chaos-executor:latest -f src/cmd/chaos-executor/Dockerfile src
 
 # Push all services to registry
 push: $(patsubst %,push-%, $(SERVICES))
@@ -31,6 +32,7 @@ push-%:
 # Deploy all services to Kubernetes
 deploy:
 	helm install chaos-kube chaos-kube-chart -f chaos-kube-chart/values/values-dev.yaml --create-namespace || helm upgrade chaos-kube chaos-kube-chart -f chaos-kube-chart/values/values-dev.yaml
+
 
 # Test all services
 test: 

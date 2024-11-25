@@ -178,7 +178,7 @@ func (m *Message) Validate() error {
 	}
 
 	switch data := m.Contents.(type) {
-	case *tasks.Task:
+	case tasks.Task:
 		dataType = "Task"
 		// only ID required unless it is a start request or the final stop
 		if m.Type == ExperimentStartRequest || m.Type == ExperimentStop {

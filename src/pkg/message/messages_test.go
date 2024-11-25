@@ -35,7 +35,7 @@ func TestEmptyMessage(t *testing.T) {
 // Test Message Validation for valid and invalid messages
 func TestMessageValidation(t *testing.T) {
 	// Valid message
-	validMsg := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStopRequest), message.WithContents(&tasks.Task{ID: uuid.New()}))
+	validMsg := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStopRequest), message.WithContents(tasks.Task{ID: uuid.New()}))
 	err := validMsg.Validate()
 	assert.Nil(t, err, "Validation should pass for valid message")
 
@@ -46,7 +46,7 @@ func TestMessageValidation(t *testing.T) {
 	assert.IsType(t, &message.ContentNotValidError{}, err, "Expected ContentNotValidError")
 
 	// Test with invalid task contents
-	invalidTask := &tasks.Task{
+	invalidTask := tasks.Task{
 		ID: uuid.New(), // This should be zero if not start or final stop
 	}
 	invalidMsgWithTask := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStartRequest), message.WithContents(invalidTask))
@@ -55,7 +55,7 @@ func TestMessageValidation(t *testing.T) {
 	assert.IsType(t, &message.ContentNotValidError{}, err, "Expected ContentNotValidError")
 
 	// Test with valid task contents
-	validTask := &tasks.Task{
+	validTask := tasks.Task{
 		ID: uuid.New(),
 	}
 	validMsgWithTask := message.New(message.WithSource("TestSource"), message.WithType(message.ExperimentStart), message.WithContents(validTask))

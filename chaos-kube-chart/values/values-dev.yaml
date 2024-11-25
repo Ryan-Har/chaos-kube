@@ -1,9 +1,7 @@
 namespace: "chaos-kube"
-
 # Global resources for the Helm chart
 global:
   imagePullPolicy: Always
-
 chaosController:
   name: "chaos-controller"
   replicaCount: 1
@@ -17,7 +15,6 @@ chaosController:
     limits:
       memory: "512Mi"
       cpu: "500m"
-
 chaosExecutor:
   name: "chaos-executor"
   serviceAccountName: chaos-executor-service-account
@@ -34,7 +31,6 @@ chaosExecutor:
     limits:
       memory: "512Mi"
       cpu: "500m"
-
 # Redis service
 redis:
   name: "redis"

@@ -29,13 +29,15 @@ func NewChaosHandler(redisClient common.RedisClient, responseManager common.Resp
 // Message handler to route any message that is configured
 func (c *ChaosHandler) Message(msg *message.MessageWithRedisOperations) error {
 	switch msg.Message.Type {
-	case message.ExperimentStartRequest:
-		//add Job ExperimentStart Info to database
+	case message.ExperimentStart:
+		slog.Info("received experimentStart", "msg", msg.Message)
 		return nil
-	case message.ExperimentStopRequest:
+		//add Job ExperimentStart Info to database
+	case message.ExperimentStop:
+		slog.Info("received experimentStop", "msg", msg.Message)
+		return nil
 		//add Job ExperimentStop Info to database
 		//Update Job progress (details tbd)
-		return nil
 	case message.JobStartRequest:
 		// Creates a UUID for the job
 		// Call JobHandler passing the job UUID and . JobHandler will keep track of the job, updating the db of progress
@@ -48,6 +50,7 @@ func (c *ChaosHandler) Message(msg *message.MessageWithRedisOperations) error {
 		// calls JobHandler method to cancel the job. Still need to figure out how this would work so that if multiple controllers exist it still works.
 		// should receive a response which generates either a error message or success message. Regardless, it should create a redis message response.
 		return nil
+
 	default:
 		return &message.MessageNotProcessedError{
 			ID:   msg.Message.ID,
@@ -62,7 +65,7 @@ func (c *ChaosHandler) SendNewExperimentStartRequest() {
 	msg := message.New(
 		message.WithType(message.ExperimentStartRequest),
 		message.WithSource(c.Source),
-		message.WithContents(&tasks.Task{
+		message.WithContents(tasks.Task{
 			ID:          uuid.New(),
 			Type:        tasks.TaskDeletePod,
 			NameSpace:   "default",
