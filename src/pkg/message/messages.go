@@ -29,38 +29,24 @@ type MessageWithRedisOperations struct {
 	Nack    func() error // Release the message so that another consumer can handle it
 }
 
-// MessageType represents the different types of messages that can be send through redis
-type MessageType int
+// MessageType represents the different types of messages that can be sent through redis
+type MessageType string
 
 // Const representing possible request types
 const (
-	Unknown MessageType = iota
-	JobStartRequest
-	JobStart
-	JobStopRequest
-	JobStop
-	ExperimentStartRequest
-	ExperimentStart
-	ExperimentStopRequest
-	ExperimentStop
+	Unknown                MessageType = "Unknown"
+	JobStartRequest        MessageType = "JobStartRequest"
+	JobStart               MessageType = "JobStart"
+	JobStopRequest         MessageType = "JobStopRequest"
+	JobStop                MessageType = "JobStop"
+	ExperimentStartRequest MessageType = "ExperimentStartRequest"
+	ExperimentStart        MessageType = "ExperimentStart"
+	ExperimentStopRequest  MessageType = "ExperimentStopRequest"
+	ExperimentStop         MessageType = "ExperimentStop"
 )
 
 func (m MessageType) String() string {
-	msgTypes := [...]string{
-		"Unknown",
-		"JobStartRequest",
-		"JobStart",
-		"JobStopRequest",
-		"JobStop",
-		"ExperimentStartRequest",
-		"ExperimentStart",
-		"ExperimentStopRequest",
-		"ExperimentStop",
-	}
-	if int(m) < 0 || int(m) >= len(msgTypes) {
-		return "Unknown"
-	}
-	return msgTypes[m]
+	return string(m)
 }
 
 // Define a custom error type for when a message cannot be processed
@@ -167,7 +153,7 @@ func (m *Message) Validate() error {
 	if m.ID == uuid.Nil {
 		failReasons = append(failReasons, "message ID is required")
 	}
-	if m.Type == 0 {
+	if m.Type == Unknown {
 		failReasons = append(failReasons, "message type is unknown")
 	}
 	if m.Timestamp.IsZero() {
