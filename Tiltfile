@@ -26,4 +26,7 @@ k8s_yaml(helm(
     values=['chaos-kube-chart/values/values-dev.yaml']
 ))
 
-
+k8s_resource(
+   workload='postgres',
+   port_forwards=['5432:5432']
+)
