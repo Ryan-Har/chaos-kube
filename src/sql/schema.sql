@@ -49,8 +49,7 @@ CREATE TABLE logs (
 CREATE TABLE configurations (
     id UUID PRIMARY KEY,
     name VARCHAR(255) NOT NULL,
-    key VARCHAR(255) NOT NULL,
-    value JSONB,   
+    options JSONB,   
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ
 );

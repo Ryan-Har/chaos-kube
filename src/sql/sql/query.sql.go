@@ -11,8 +11,37 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addJob = `-- name: AddJob :one
+INSERT INTO jobs (configuration_id, name, description, start_time, end_time, status)
+Values ($1, $2, $3, $4, $5, $6)
+returning id
+`
+
+type AddJobParams struct {
+	ConfigurationID pgtype.UUID
+	Name            string
+	Description     pgtype.Text
+	StartTime       pgtype.Timestamptz
+	EndTime         pgtype.Timestamptz
+	Status          NullJobStatus
+}
+
+func (q *Queries) AddJob(ctx context.Context, arg AddJobParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, addJob,
+		arg.ConfigurationID,
+		arg.Name,
+		arg.Description,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Status,
+	)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const getConfigurationByID = `-- name: GetConfigurationByID :one
-SELECT id, name, key, value, created_at, updated_at FROM configurations
+SELECT id, name, options, created_at, updated_at FROM configurations
 WHERE id = $1 LIMIT 1
 `
 
@@ -22,8 +51,7 @@ func (q *Queries) GetConfigurationByID(ctx context.Context, id pgtype.UUID) (Con
 	err := row.Scan(
 		&i.ID,
 		&i.Name,
-		&i.Key,
-		&i.Value,
+		&i.Options,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -31,7 +59,7 @@ func (q *Queries) GetConfigurationByID(ctx context.Context, id pgtype.UUID) (Con
 }
 
 const getConfigurations = `-- name: GetConfigurations :many
-SELECT id, name, key, value, created_at, updated_at FROM configurations
+SELECT id, name, options, created_at, updated_at FROM configurations
 ORDER BY updated_at DESC
 `
 
@@ -47,8 +75,7 @@ func (q *Queries) GetConfigurations(ctx context.Context) ([]Configuration, error
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,
-			&i.Key,
-			&i.Value,
+			&i.Options,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -221,4 +248,52 @@ func (q *Queries) GetTasksByJobID(ctx context.Context, jobID pgtype.UUID) ([]Tas
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateJobByID = `-- name: UpdateJobByID :one
+UPDATE jobs
+SET 
+    configuration_id = COALESCE($2, configuration_id),
+    name = COALESCE($3, name),
+    description = COALESCE($4, description),
+    start_time = COALESCE($5, start_time),
+    end_time = COALESCE($6, end_time),
+    status = COALESCE($7, status)
+WHERE id = $1
+RETURNING id, configuration_id, name, description, start_time, end_time, status, created_at, updated_at
+`
+
+type UpdateJobByIDParams struct {
+	ID              pgtype.UUID
+	ConfigurationID pgtype.UUID
+	Name            pgtype.Text
+	Description     pgtype.Text
+	StartTime       pgtype.Timestamptz
+	EndTime         pgtype.Timestamptz
+	Status          NullJobStatus
+}
+
+func (q *Queries) UpdateJobByID(ctx context.Context, arg UpdateJobByIDParams) (Job, error) {
+	row := q.db.QueryRow(ctx, updateJobByID,
+		arg.ID,
+		arg.ConfigurationID,
+		arg.Name,
+		arg.Description,
+		arg.StartTime,
+		arg.EndTime,
+		arg.Status,
+	)
+	var i Job
+	err := row.Scan(
+		&i.ID,
+		&i.ConfigurationID,
+		&i.Name,
+		&i.Description,
+		&i.StartTime,
+		&i.EndTime,
+		&i.Status,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }

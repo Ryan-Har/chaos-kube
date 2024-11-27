@@ -216,8 +216,7 @@ func (ns NullTaskType) Value() (driver.Value, error) {
 type Configuration struct {
 	ID        pgtype.UUID
 	Name      string
-	Key       string
-	Value     []byte
+	Options   []byte
 	CreatedAt pgtype.Timestamptz
 	UpdatedAt pgtype.Timestamptz
 }
