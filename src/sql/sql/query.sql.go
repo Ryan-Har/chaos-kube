@@ -11,6 +11,24 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
+const addConfiguration = `-- name: AddConfiguration :one
+INSERT INTO configurations (name, options)
+VALUES ($1, $2)
+RETURNING id
+`
+
+type AddConfigurationParams struct {
+	Name    string
+	Options []byte
+}
+
+func (q *Queries) AddConfiguration(ctx context.Context, arg AddConfigurationParams) (pgtype.UUID, error) {
+	row := q.db.QueryRow(ctx, addConfiguration, arg.Name, arg.Options)
+	var id pgtype.UUID
+	err := row.Scan(&id)
+	return id, err
+}
+
 const addJob = `-- name: AddJob :one
 INSERT INTO jobs (configuration_id, name, description, start_time, end_time, status)
 Values ($1, $2, $3, $4, $5, $6)
@@ -248,6 +266,34 @@ func (q *Queries) GetTasksByJobID(ctx context.Context, jobID pgtype.UUID) ([]Tas
 		return nil, err
 	}
 	return items, nil
+}
+
+const updateConfigurationsByID = `-- name: UpdateConfigurationsByID :one
+UPDATE configurations
+SET 
+    name = COALESCE($2, name),
+    options = COALESCE($3, options)
+WHERE id = $1
+RETURNING id, name, options, created_at, updated_at
+`
+
+type UpdateConfigurationsByIDParams struct {
+	ID      pgtype.UUID
+	Name    pgtype.Text
+	Options []byte
+}
+
+func (q *Queries) UpdateConfigurationsByID(ctx context.Context, arg UpdateConfigurationsByIDParams) (Configuration, error) {
+	row := q.db.QueryRow(ctx, updateConfigurationsByID, arg.ID, arg.Name, arg.Options)
+	var i Configuration
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Options,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const updateJobByID = `-- name: UpdateJobByID :one

@@ -23,6 +23,19 @@ WHERE id = $1 LIMIT 1;
 SELECT * FROM configurations
 ORDER BY updated_at DESC;
 
+-- name: AddConfiguration :one
+INSERT INTO configurations (name, options)
+VALUES ($1, $2)
+RETURNING id;
+
+-- name: UpdateConfigurationsByID :one
+UPDATE configurations
+SET 
+    name = COALESCE(sqlc.narg(name), name),
+    options = COALESCE(sqlc.narg(options), options)
+WHERE id = $1
+RETURNING *;
+
 -- name: GetJobsToSchedule :many
 WITH cte AS (
     SELECT id
